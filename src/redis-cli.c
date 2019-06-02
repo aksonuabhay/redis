@@ -230,6 +230,7 @@ static struct config {
     int verbose;
     clusterManagerCommand cluster_manager_command;
     int no_auth_warning;
+    int prod;
 } config;
 
 /* User preferences. */
@@ -1365,6 +1366,8 @@ static int parseOptions(int argc, char **argv) {
             config.mb_delim = sdsnew(argv[++i]);
         } else if (!strcmp(argv[i],"--verbose")) {
             config.verbose = 1;
+        } else if (!strcmp(argv[i],"--non-prod")) {
+            config.prod = 0;
         } else if (!strcmp(argv[i],"--cluster") && !lastarg) {
             if (CLUSTER_MANAGER_MODE()) usage();
             char *cmd = argv[++i];
@@ -1701,6 +1704,11 @@ void cliLoadPreferences(void) {
     sdsfree(rcfile);
 }
 
+bool isProdRestrictedCommand(sds const *argv) {
+    /* Can add more commands if needed to blacklist in prod */
+    return !strcasecmp(argv[0], "keys") || !strcasecmp(argv[0], "eval");
+}
+
 static void repl(void) {
     sds historyfile = NULL;
     int history = 0;
@@ -1795,6 +1803,13 @@ static void repl(void) {
                     linenoiseClearScreen();
                 } else {
                     long long start_time = mstime(), elapsed;
+
+                    if  (config.prod == 1 && isProdRestrictedCommand(argv)) {
+                        sdsfreesplitres(argv,argc);
+                        linenoiseFree(line);
+                        printf("Command usage restricted in prod mode.\n");
+                        continue;
+                    }
 
                     issueCommandRepeat(argc-skipargs, argv+skipargs, repeat);
 
@@ -7695,6 +7710,7 @@ int main(int argc, char **argv) {
         CLUSTER_MANAGER_REBALANCE_THRESHOLD;
     config.cluster_manager_command.backup_dir = NULL;
     pref.hints = 1;
+    config.prod = 1;
 
     spectrum_palette = spectrum_palette_color;
     spectrum_palette_size = spectrum_palette_color_size;
